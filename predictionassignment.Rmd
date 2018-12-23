@@ -1,0 +1,131 @@
+---
+title: "Practical Machine Learning: Prediction Assignment"
+author: "Surya Prakash Tripathi"
+date: "December 23, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. The goal of this project is to form a machine learning model by using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+##Data
+The training data for this project is obtained from:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+whereas the test data is avaiable here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data comes from this source: http://groupware.les.inf.puc-rio.br/har
+
+##Preliminary Work
+The pseudo-random number generator seed was set at 1234. The same seed should be used in order to obtain the same results below.
+```{r}
+library(caret)
+set.seed(1234)
+```
+
+
+##Loading the data
+We first load the datasets into the environment. Before that, it was discovered that the datasets consists of missing values for some predictors, denoted as "Na".
+```{r}
+rawtrainSet <- read.csv(file ="pml-training.csv",na.strings = c("NA","#DIV/0!"))
+testSet <- read.csv(file="pml-testing.csv",na.strings = c("NA","#DIV/0!"))
+```
+
+##Data Exploration and Cleaning
+We check the number of variables and number of the observations in the datasets.
+```{r}
+dim(rawtrainSet)
+dim(testSet)
+```
+We found that there is some colums with all mising values and they should be removed.
+
+```{r}
+rawtrainSet<-rawtrainSet[,colSums(is.na(rawtrainSet)) == 0]
+testSet <-testSet[,colSums(is.na(testSet)) == 0]
+```
+
+We also determine the number of observations that has missing values
+```{r}
+sum(!complete.cases(rawtrainSet))
+sum(!complete.cases(testSet))
+```
+It seems that every observations has complete values for all variables.
+
+Next, we remove some variables (user and timestamp) that is not related to our model building (predicting whether barbel lift is correct or not based on accelerometer data)
+
+```{r}
+cols <- c("user_name", "raw_timestamp_part_1",
+                    "raw_timestamp_part_2", "cvtd_timestamp","num_window","new_window")
+rawtrainSet <- rawtrainSet[,-which(names(rawtrainSet)%in% cols)]
+testSet <- testSet[,-which(names(testSet)%in% cols)]
+```
+
+##Validation Set
+Before we start building our model, we remove a part of the training set as the validation set to test the out-of-sample error.
+```{r}
+split <- 0.80
+trainind <-  createDataPartition(rawtrainSet$classe, p=split, list=FALSE)
+
+trainSet <- rawtrainSet[trainind,]
+validSet <- rawtrainSet[-trainind,]
+```
+
+##Model building
+We would use three methods, random forest, multinormial logistic regression and linear discriminant analysis to build models and select the best one out from them. 
+
+###Cross Validation
+To eliminate bias and overfitting when selecting the best models, we would do a data split of 80% for training and the rest for testing. The model with the lowest average error from is the best model.
+
+```{r,echo=FALSE}
+library(randomForest)
+library(nnet)
+split <- 0.80
+
+trainIndex <- createDataPartition(trainSet$classe, p=split, list=FALSE)
+traincross <- trainSet[trainIndex, ]
+testcross <- trainSet[-trainIndex,]
+
+
+mod1 <- randomForest(classe ~ ., data=traincross,method="class")
+mod2 <- multinom(classe ~ ., data=traincross, maxit =500, trace=T)
+mod3 <- train(classe ~ ., data=traincross, method="lda",na.action = na.exclude)
+  
+pred1 <- predict(mod1,testcross)
+pred2 <- predict(mod2,testcross)
+pred3 <- predict(mod3,testcross)
+
+  
+accuracy1 <- sum(pred1==testcross$classe)/length(pred1)
+accuracy2 <- sum(pred2==testcross$classe)/length(pred2)
+accuracy3 <- sum(pred3==testcross$classe)/length(pred3)
+
+```
+
+```{r}
+accuracy1 #for random forest
+accuracy2 #for multinormial logistic regression
+accuracy3 #for linear discriminant analysis
+```
+
+###Final Model
+From above, we found that Random Forest model achieve the perfect score. We hence pick Random Forest to be our model. We now use the entire training Set to build the final model and use the validation set to get the expected out-of-sample error.
+```{r}
+
+finalmod<- randomForest(classe ~. ,data=trainSet,method="class")
+pred <- predict(finalmod,validSet,method="class")
+
+accuracy <- sum(pred==validSet$classe)/length(pred)
+1-accuracy
+```
+
+Our expected out-of-sample error from the model seems to be perfect (0).
+
+##Results for the Test Cases
+We now use our model to predict the classe for the 20 test cases.
+```{r}
+finalpred <- predict(mod3,testSet[,-54])
+```
